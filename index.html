@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- versao-da-ficha: ef18ba401f -->
 <!-- Gerado por scripts/gerar_ficha_offline.py — não edite aqui: mexa no template e gere de novo. -->
 <html lang="pt-BR">
 <head>
@@ -11,6 +12,11 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Jost:wght@300;400;500&display=swap" rel="stylesheet" />
+<!-- jsPDF: monta o PDF da ficha no próprio aparelho do paciente, para o botão
+     de enviar entregar o arquivo pronto à bandeja de compartilhamento.
+     Se não carregar (paciente sem internet), o botão de PDF cai na impressão
+     do navegador e o de enviar cai no envio por texto. -->
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/4.2.1/jspdf.umd.min.js"></script>
 <style>
   :root{
     --noite:#0b0722;--noite-2:#150e33;
@@ -210,13 +216,14 @@
     </section>
 
     <div class="acoes">
-      <button class="btn btn-solid" id="btn-zap">✔ Enviar respostas</button>
-      <button class="btn" id="btn-pdf">⤓ Salvar em PDF</button>
+      <button class="btn btn-solid" id="btn-enviar">✔ Enviar respostas</button>
+      <button class="btn" id="btn-pdf">⤓ Baixar o PDF</button>
+      <button class="btn" id="btn-zap">💬 Enviar como texto</button>
       <button class="btn" id="btn-arq">Baixar arquivo</button>
       <button class="btn" id="btn-copiar">Copiar texto</button>
       <button class="btn btn-apagar" id="btn-limpar">Apagar tudo</button>
     </div>
-    <p class="salvo" id="salvo">As respostas são salvas neste aparelho automaticamente.</p>
+    <p class="salvo" id="salvo">O botão de enviar monta a sua ficha em PDF e abre o compartilhamento do aparelho — é só escolher a conversa. As respostas ficam salvas aqui enquanto você preenche.</p>
   </main>
 
   <footer>
@@ -781,6 +788,123 @@
     el('impressao').innerHTML = html;
   }
 
+  // ── PDF ───────────────────────────────────────────────────────────────────
+  // Desenhado campo a campo (não é print da tela): o texto sai selecionável e o
+  // arquivo fica na casa das dezenas de KB, não de MB. Mesmo desenho da ficha
+  // impressa — folha branca, seção e tabela rótulo/resposta.
+  function linhasDaFicha() {
+    var blocos = [];
+    SECOES.forEach(function (sec) {
+      var linhas = [];
+      sec.campos.forEach(function (c) {
+        var v = dados[sec.grupo][c.k];
+        if (c.tipo === 'check') { if (v) linhas.push([c.label, 'Sim']); return; }
+        if (v == null || String(v).trim() === '') return;
+        linhas.push([c.label, String(v).trim()]);
+      });
+      if (linhas.length) blocos.push([sec.titulo, linhas]);
+    });
+    if ((extra.observacoes || '').trim()) {
+      blocos.push(['Para terminar', [['Outras coisas que quero contar', extra.observacoes.trim()]]]);
+    }
+    return blocos;
+  }
+
+  function montarPdf() {
+    var J = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+    if (!J) return null;
+
+    var doc = new J({ unit: 'mm', format: 'a4' });
+    var M = 14, COL = 54, GAP = 4, LARG = 210 - M * 2;
+    var LARG_VAL = LARG - COL - GAP;
+    var FIM = 272, LH = 4.2;
+    var y = M, pagina = 1;
+
+    function rodape() {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(120);
+      doc.text('Ficha de anamnese · Oficina da Alma', M, 285);
+      doc.text(String(pagina), 210 - M, 285, { align: 'right' });
+      doc.setTextColor(0);
+    }
+    function quebrar() { rodape(); doc.addPage(); pagina++; y = M; }
+    function cabe(h) { if (y + h > FIM) quebrar(); }
+
+    var nome = (dados.paciente.nome || '').trim();
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text('Ficha de Anamnese', 105, y + 4, { align: 'center' });
+    y += 10;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(90);
+    doc.text((nome ? nome + ' · ' : '') + 'preenchida pelo paciente em ' +
+      new Date().toLocaleDateString('pt-BR'), 105, y, { align: 'center' });
+    doc.setTextColor(0);
+    y += 8;
+
+    linhasDaFicha().forEach(function (bloco) {
+      var titulo = bloco[0], linhas = bloco[1];
+
+      cabe(14);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.text(titulo, M, y);
+      y += 1.6;
+      doc.setDrawColor(40);
+      doc.setLineWidth(0.3);
+      doc.line(M, y, M + LARG, y);
+      y += 4;
+
+      linhas.forEach(function (par) {
+        doc.setFontSize(8.8);
+        doc.setFont('helvetica', 'bold');
+        var lr = doc.splitTextToSize(par[0], COL - 2);
+        doc.setFont('helvetica', 'normal');
+        var lv = doc.splitTextToSize(par[1], LARG_VAL - 2);
+        var alt = Math.max(lr.length, lv.length) * LH + 2.6;
+
+        cabe(alt);
+        doc.setFont('helvetica', 'bold');
+        doc.text(lr, M + 1, y + 3);
+        doc.setFont('helvetica', 'normal');
+        doc.text(lv, M + COL + GAP, y + 3);
+        y += alt;
+        doc.setDrawColor(205);
+        doc.setLineWidth(0.1);
+        doc.line(M, y - 0.8, M + LARG, y - 0.8);
+      });
+      y += 3.5;
+    });
+
+    cabe(10);
+    doc.setFontSize(7.5);
+    doc.setTextColor(120);
+    doc.text(extra.consentimento
+      ? 'O paciente autorizou o uso destas informações no atendimento.'
+      : 'Autorização de uso não assinalada.', M, y + 3);
+    doc.setTextColor(0);
+    rodape();
+    return doc;
+  }
+
+  function nomeArquivo(ext) {
+    var n = (dados.paciente.nome || '').trim().toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    return 'anamnese-' + (n || 'ficha') + '.' + ext;
+  }
+
+  function baixarBlob(blob, nome) {
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = nome;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+
   // ── ações ─────────────────────────────────────────────────────────────────
   var flashTimer = null;
   function flash(msg) {
@@ -807,6 +931,40 @@
     return true;
   }
 
+  // Caminho principal: monta o PDF e entrega à bandeja de compartilhamento do
+  // aparelho, para o arquivo cair direto na conversa. Quando o aparelho não
+  // sabe compartilhar arquivo (quase todo computador), baixa o PDF e diz o que
+  // fazer com ele. Sem a biblioteca de PDF, cai no envio por texto.
+  function enviarRespostas() {
+    if (!prontoParaEnviar()) return;
+    var doc = montarPdf();
+    if (!doc) { flash('Não consegui montar o PDF aqui — vou enviar como texto.'); enviarWhats(); return; }
+
+    var blob = doc.output('blob');
+    var nome = nomeArquivo('pdf');
+    var arquivo = null;
+    try { arquivo = new File([blob], nome, { type: 'application/pdf' }); } catch (e) { arquivo = null; }
+
+    if (arquivo && navigator.canShare && navigator.canShare({ files: [arquivo] })) {
+      navigator.share({
+        files: [arquivo],
+        title: 'Ficha de anamnese',
+        text: 'Minha ficha de anamnese preenchida.'
+      }).then(function () {
+        flash('Ficha enviada. Obrigada!');
+      })['catch'](function (e) {
+        // Desistir do compartilhamento não é erro — não vale incomodar.
+        if (e && (e.name === 'AbortError' || e.name === 'NotAllowedError')) return;
+        baixarBlob(blob, nome);
+        flash('Não deu para compartilhar — o PDF foi salvo no aparelho.');
+      });
+      return;
+    }
+
+    baixarBlob(blob, nome);
+    flash('PDF salvo no seu aparelho. Agora é só anexá-lo na conversa.');
+  }
+
   function enviarWhats() {
     if (!prontoParaEnviar()) return;
     var destino = (new URLSearchParams(location.search).get('para') || DESTINO_PADRAO || '').replace(/\D/g, '');
@@ -821,15 +979,8 @@
       tipo: 'oficina-da-alma/ficha-paciente', versao: 1,
       preenchidaEm: new Date().toISOString(), dados: dados, extra: extra
     };
-    var nome = ((dados.paciente.nome || 'ficha').trim().toLowerCase()
-      .normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')) || 'ficha';
     var blob = new Blob([JSON.stringify(pacote, null, 2)], { type: 'application/json' });
-    var a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'anamnese-' + nome + '.json';
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    baixarBlob(blob, nomeArquivo('json'));
     flash('Arquivo baixado. Envie-o para a sua terapeuta.');
   }
 
@@ -852,6 +1003,13 @@
   }
 
   function salvarPdf() {
+    var doc = montarPdf();
+    if (doc) {
+      baixarBlob(doc.output('blob'), nomeArquivo('pdf'));
+      flash('PDF salvo no seu aparelho.');
+      return;
+    }
+    // Sem a biblioteca (paciente offline): imprime pelo navegador, mesmo desenho.
     montarImpressao();
     setTimeout(function () { window.print(); }, 120);
   }
@@ -912,6 +1070,7 @@
     el('obs').addEventListener('input', function () { extra.observacoes = this.value; salvar(); });
     el('consent').addEventListener('change', function () { extra.consentimento = this.checked; salvar(); });
 
+    el('btn-enviar').addEventListener('click', enviarRespostas);
     el('btn-zap').addEventListener('click', enviarWhats);
     el('btn-pdf').addEventListener('click', salvarPdf);
     el('btn-arq').addEventListener('click', baixarArquivo);
