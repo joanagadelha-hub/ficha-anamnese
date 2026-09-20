@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- versao-da-ficha: ef18ba401f -->
+<!-- versao-da-ficha: e65ebac3a8 -->
 <!-- Gerado por scripts/gerar_ficha_offline.py — não edite aqui: mexa no template e gere de novo. -->
 <html lang="pt-BR">
 <head>
@@ -17,6 +17,160 @@
      Se não carregar (paciente sem internet), o botão de PDF cai na impressão
      do navegador e o de enviar cai no envio por texto. -->
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/4.2.1/jspdf.umd.min.js"></script>
+<!-- Vocabulário comum às duas fichas da terapeuta: é daqui que saem os gatilhos
+     de "o que faz piorar", para a lista não divergir. O gerador do arquivo
+     solto embute este script, que é pequeno e obrigatório. -->
+<script>/* assets/anamnese_comum.js embutido */
+/* =============================================================================
+ * Anamnese comum — Easy Acupuntura + Auriculoterapia
+ * -----------------------------------------------------------------------------
+ * As duas fichas nasceram separadas e batizaram os mesmos campos com nomes
+ * diferentes (medicacao × medicamentosEmUso, emocao × temperamento...). Isso
+ * impedia a ficha que o paciente preenche de servir às duas. Este arquivo é o
+ * acordo: o vocabulário canônico, os campos que as duas passaram a ter, e a
+ * tradução dos nomes antigos para os novos.
+ *
+ * Servido em /assets/anamnese_comum.js e carregado ANTES do app.js de cada
+ * módulo. Mexeu aqui, mexeu nas duas fichas e na ficha do paciente.
+ *
+ * Os campos novos vêm do "Roteiro de Bancada · Terapia do Bem" (Raul Breves),
+ * confrontado com o que as duas fichas já perguntavam:
+ *   • bloco de segurança — gravidez, anticoagulante, marca-passo, alergia a
+ *     adesivo e estado da orelha não eram perguntados em lugar nenhum, e os
+ *     cinco mudam ou impedem a conduta (o próprio Roteiro fixa os cristais
+ *     "adesivados com micropore");
+ *   • "o que faz piorar" — no Roteiro a pergunta deixa de ser conversa e vira
+ *     endereço: "cada agravamento tem o seu ponto circunstancial";
+ *   • queixa emocional e contexto do início — a "escuta em duas colunas", que
+ *     é o que permite cruzar corpo e emoção no mesmo elemento.
+ * ========================================================================== */
+(function () {
+  'use strict';
+
+  // ── Bloco 1 · Segurança ───────────────────────────────────────────────────
+  // Entram como caixas de marcar porque são perguntas de sim/não que mudam a
+  // conduta — texto livre aqui seria esquecido na leitura rápida antes da
+  // sessão. O detalhe de cada uma vai no campo Alergias / Observações.
+  var SEGURANCA = [
+    { k: 'gravidez', label: 'Gestante ou suspeita de gravidez', tipo: 'check' },
+    { k: 'amamentando', label: 'Amamentando', tipo: 'check' },
+    { k: 'anticoagulante', label: 'Anticoagulante ou distúrbio de coagulação', tipo: 'check' },
+    { k: 'marcapasso', label: 'Marca-passo ou implante eletrônico', tipo: 'check' },
+    { k: 'alergiaAdesivo', label: 'Alergia a esparadrapo, micropore ou metal', tipo: 'check' },
+    {
+      k: 'estadoOrelha', label: 'Estado das orelhas', tipo: 'text', span: 2,
+      ph: 'Ferida, dermatite, psoríase, piercing recente, cirurgia — ou "sem alterações"'
+    }
+  ];
+
+  // ── Bloco 2 · O que faz piorar ────────────────────────────────────────────
+  // Gatilho → ponto circunstancial, na tabela do Roteiro. A ficha do paciente
+  // mostra só os rótulos; os pontos são para a terapeuta e para o guia.
+  var PIORA = [
+    ['as emoções', 'C5 · E36'],
+    ['o frio', 'B62'],
+    ['frio e vento', 'P1'],
+    ['frio seco', 'TA5 · E36'],
+    ['o calor', 'E36'],
+    ['o vento quente', 'R1'],
+    ['a umidade', 'TA5 · B21 · E15'],
+    ['mudanças de tempo', 'TA5'],
+    ['temperaturas extremas', 'R1'],
+    ['à noite', 'CS9 · VG20'],
+    ['ruídos e gritos', 'E45 · VG20'],
+    ['o repouso', 'VC3'],
+    ['o movimento', 'B60'],
+    ['a fadiga física', 'B38 · B62'],
+    ['a menstruação', 'B62 · R6'],
+    ['a menopausa', 'B31 · R4'],
+    ['as relações sexuais', 'B38'],
+    ['comer carne ou o cheiro de comida', 'E36'],
+    ['a absorção dos alimentos', 'BP9'],
+    ['álcool', 'CS6 · BP6']
+  ];
+
+  // ── Bloco 3 · Escuta em duas colunas ──────────────────────────────────────
+  var CLINICO = [
+    {
+      k: 'queixaEmocional', label: 'Queixa emocional', tipo: 'area', span: 2,
+      ph: 'Irritação, medo, tristeza, preocupação — a coluna emocional, ao lado da física'
+    },
+    {
+      k: 'inicioContexto', label: 'Quando começou — e o que acontecia na vida', tipo: 'area', span: 2,
+      ph: 'A pergunta de origem: o que estava acontecendo na época em que o sintoma apareceu'
+    },
+    {
+      k: 'oQuePiora', label: 'O que faz piorar', tipo: 'area', span: 2,
+      ph: 'Frio, calor, umidade, noite, repouso, movimento, fadiga, ruído, menstruação, álcool...'
+    }
+  ];
+
+  // ── Vocabulário: nome antigo → nome canônico ──────────────────────────────
+  // À esquerda, tudo que já foi gravado em localStorage por qualquer uma das
+  // duas fichas. À direita, o nome de hoje. Nunca remova uma linha daqui: é o
+  // que mantém legível uma ficha salva antes da unificação.
+  var LEGADO = {
+    // Easy Acupuntura (erros de digitação de origem)
+    historicoPatalogicoPregresso: 'historicoPatologicoPregresso',
+    historicoPatalogicFamiliar: 'historicoPatologicoFamiliar',
+    cefale: 'cefaleia',
+    // Auriculoterapia
+    historicoPregresso: 'historicoPatologicoPregresso',
+    historicoFamiliar: 'historicoPatologicoFamiliar',
+    medicacao: 'medicamentosEmUso',
+    exames: 'examesApresentados',
+    sensibilidadeTermica: 'sensibilidadeClimatica',
+    emocao: 'temperamento',
+    gestacoes: 'reproducao',
+    circulacao: 'circulacaoPerif',
+    alimentacao: 'apetite'
+  };
+
+  /**
+   * Traduz uma ficha salva para o vocabulário de hoje, grupo a grupo.
+   * Só renomeia o que ainda não existe com o nome novo — se os dois estiverem
+   * preenchidos, o valor novo manda e o antigo é descartado.
+   * Devolve o mesmo objeto, alterado no lugar.
+   */
+  function migrar(dados) {
+    if (!dados) return dados;
+    Object.keys(dados).forEach(function (grupo) {
+      var g = dados[grupo];
+      if (!g || typeof g !== 'object' || Array.isArray(g)) return;
+      Object.keys(LEGADO).forEach(function (velho) {
+        if (!(velho in g)) return;
+        var novo = LEGADO[velho];
+        var vazio = g[novo] == null || g[novo] === '' || g[novo] === false;
+        if (vazio) g[novo] = g[velho];
+        delete g[velho];
+      });
+    });
+    // O `sentidos` da auriculoterapia era um campo só para audição, visão e
+    // olfato. Sem como separar com segurança, o texto inteiro vai para olhos e
+    // a origem fica anotada — melhor que perdê-lo.
+    Object.keys(dados).forEach(function (grupo) {
+      var g = dados[grupo];
+      if (!g || typeof g !== 'object' || Array.isArray(g)) return;
+      if (g.sentidos && !g.olhos && !g.ouvido && !g.nariz) {
+        g.olhos = g.sentidos;
+        delete g.sentidos;
+      }
+    });
+    return dados;
+  }
+
+  window.ANAMNESE = {
+    SEGURANCA: SEGURANCA,
+    PIORA: PIORA,
+    CLINICO: CLINICO,
+    LEGADO: LEGADO,
+    migrar: migrar,
+    /** Só os rótulos dos gatilhos, para a ficha do paciente. */
+    gatilhos: function () { return PIORA.map(function (p) { return p[0]; }); }
+  };
+})();
+
+</script>
 <style>
   :root{
     --noite:#0b0722;--noite-2:#150e33;
@@ -289,9 +443,25 @@
           ph: 'Ex.: 1. Dor na lombar há 3 meses. 2. Insônia. 3. Enxaqueca.'
         },
         {
+          k: 'queixaEmocional', label: 'Como você tem se sentido por causa disso', tipo: 'area', larga: true,
+          dica: 'A queixa do corpo e a do sentimento são duas coisas — e as duas importam igual. Irritação, medo, tristeza, preocupação, desânimo, vergonha: o que essa queixa mexe em você.',
+          ph: 'Ex.: fico irritada por não conseguir fazer o que fazia antes, e com medo de piorar'
+        },
+        {
           k: 'historiaDoencaAtual', label: 'Como isso começou e como está hoje', tipo: 'area', larga: true,
-          dica: 'Quando começou, se houve algum acontecimento junto, e como vem evoluindo. Se houver dor, conte: o que melhora e o que piora (apertar o local, frio, calor, chuva, movimento, repouso), em que hora do dia é pior, e como ela é — queimação, latejante, peso, aperto, pontada, choque. Se notou inchaço ou mudança na cor da pele no local, conte também.',
+          dica: 'Quando começou e como vem evoluindo. Se houver dor, conte como ela é — queimação, latejante, peso, aperto, pontada, choque — e se notou inchaço ou mudança na cor da pele no local.',
           ph: 'Escreva do seu jeito, como você contaria para alguém...'
+        },
+        {
+          k: 'inicioContexto', label: 'O que estava acontecendo na sua vida quando isso começou', tipo: 'area', larga: true,
+          dica: 'Mudança de casa ou de emprego, uma perda, uma briga, um susto, uma sobrecarga. Às vezes parece não ter nada a ver — conte mesmo assim, essa pergunta costuma explicar muita coisa.',
+          ph: 'Ex.: começou mais ou menos na época em que meu pai adoeceu'
+        },
+        {
+          k: 'oQuePiora', label: 'O que faz piorar', tipo: 'tags',
+          opts: (window.ANAMNESE ? window.ANAMNESE.gatilhos() : []),
+          dica: 'Marque tudo que você já reparou que piora a sua queixa. Se nunca prestou atenção nisso, tudo bem deixar em branco — a gente observa juntas.',
+          ph: 'Outra coisa que piora...'
         }
       ]
     },
@@ -300,12 +470,12 @@
       intro: 'O que já passou pelo seu corpo, e o que corre na família.',
       campos: [
         {
-          k: 'historicoPatalogicoPregresso', label: 'Doenças, cirurgias e acidentes que você já teve', tipo: 'area', larga: true,
+          k: 'historicoPatologicoPregresso', label: 'Doenças, cirurgias e acidentes que você já teve', tipo: 'area', larga: true,
           dica: 'Inclua a idade aproximada de cada um. Internações, fraturas e quedas também contam.',
           ph: 'Ex.: cesárea aos 29 anos, retirada da vesícula aos 40, hérnia de disco...'
         },
         {
-          k: 'historicoPatalogicFamiliar', label: 'Doenças na família', tipo: 'area', larga: true,
+          k: 'historicoPatologicoFamiliar', label: 'Doenças na família', tipo: 'area', larga: true,
           dica: 'Pais, irmãos, avós e filhos — principalmente quem teve algo parecido com a sua queixa. Se souber, conte também a idade dos seus pais quando você nasceu e quantos irmãos você tem.',
           ph: 'Ex.: mãe hipertensa, pai diabético, avó com artrite...'
         },
@@ -342,7 +512,18 @@
         { k: 'has', label: 'Tenho pressão alta (hipertensão)', tipo: 'check' },
         { k: 'diabetes', label: 'Tenho diabetes', tipo: 'check' },
         { k: 'asma', label: 'Tenho asma', tipo: 'check' },
-        { k: 'epilepsia', label: 'Tenho epilepsia', tipo: 'check' }
+        { k: 'epilepsia', label: 'Tenho epilepsia', tipo: 'check' },
+        { k: 'gravidez', label: 'Estou grávida — ou acho que posso estar', tipo: 'check' },
+        { k: 'amamentando', label: 'Estou amamentando', tipo: 'check' },
+        { k: 'anticoagulante', label: 'Tomo anticoagulante ou tenho problema de coagulação', tipo: 'check' },
+        { k: 'marcapasso', label: 'Uso marca-passo ou outro implante eletrônico', tipo: 'check' },
+        { k: 'alergiaAdesivo', label: 'Tenho alergia a esparadrapo, micropore ou metal', tipo: 'check' },
+        {
+          k: 'estadoOrelha', label: 'Como estão as suas orelhas', tipo: 'tags',
+          opts: ['Sem alterações', 'Ferida ou machucado', 'Descamação ou dermatite', 'Psoríase', 'Piercing', 'Cirurgia recente', 'Dor ao toque'],
+          dica: 'Na auriculoterapia as sementinhas ficam presas na orelha com micropore por alguns dias — por isso preciso saber como está a pele daí antes.',
+          ph: 'Outro detalhe sobre as orelhas...'
+        }
       ]
     },
     {
@@ -388,7 +569,7 @@
       intro: 'Da cabeça ao pescoço.',
       campos: [
         {
-          k: 'cefale', label: 'Dor de cabeça', tipo: 'tags',
+          k: 'cefaleia', label: 'Dor de cabeça', tipo: 'tags',
           opts: ['Não tenho', 'Na testa', 'Nas têmporas (lateral)', 'No alto da cabeça', 'Na nuca', 'Atrás dos olhos', 'Em peso', 'Latejante', 'Enxaqueca'],
           dica: 'Com que frequência, e o que costuma desencadear?', ph: 'Ex.: 2x por mês, sempre perto da menstruação'
         },
@@ -456,10 +637,16 @@
       intro: 'Na MTC, a digestão é um dos pilares da energia do dia a dia.',
       campos: [
         {
-          k: 'apetite', label: 'Apetite e sede', tipo: 'tags',
-          opts: ['Apetite normal', 'Pouco apetite', 'Muita fome', 'Fome o tempo todo', 'Prefiro comida quente', 'Prefiro comida gelada', 'Como rápido', 'Belisco o dia todo', 'Muita sede', 'Pouca sede', 'Bebo água gelada', 'Bebo água natural'],
-          dica: 'Quantas refeições por dia você faz? Quantos copos de água você bebe? E o mais importante: comer melhora ou piora o seu mal-estar?',
-          ph: 'Ex.: 3 refeições, bebo 1 litro por dia, melhoro depois de comer'
+          k: 'apetite', label: 'Apetite', tipo: 'tags',
+          opts: ['Apetite normal', 'Pouco apetite', 'Muita fome', 'Fome o tempo todo', 'Prefiro comida quente', 'Prefiro comida gelada', 'Como rápido', 'Belisco o dia todo'],
+          dica: 'Quantas refeições você faz por dia? E o mais importante: comer melhora ou piora o seu mal-estar?',
+          ph: 'Ex.: 3 refeições por dia, melhoro depois de comer'
+        },
+        {
+          k: 'sede', label: 'Sede', tipo: 'tags',
+          opts: ['Sede normal', 'Muita sede', 'Pouca sede', 'Não sinto sede', 'Bebo água gelada', 'Bebo água natural ou quente', 'Bebo devagar, aos goles', 'Bebo muito de uma vez'],
+          dica: 'Mais ou menos quantos copos de água por dia?',
+          ph: 'Ex.: uns 5 copos'
         },
         {
           k: 'digestao', label: 'Digestão', tipo: 'tags',
